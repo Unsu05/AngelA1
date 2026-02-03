@@ -4,10 +4,29 @@
 #include "room.h"
 
 /* ============================================================
+ * Helper: Internal Tile Logic
+ * ============================================================ */
+static bool internal_is_floor(const Room *r, int col, int row) {
+    // If we have an explicit grid, use it
+    if (r->floor_grid != NULL) {
+        return r->floor_grid[row * r->width + col];
+    }
+    
+    // Implicit Mode: Perimeter is wall, interior is floor
+    bool is_boundary = (col == 0 || col == r->width - 1 || 
+                        row == 0 || row == r->height - 1);
+    return !is_boundary;
+}
+
+/* ============================================================
  * Creation
  * ============================================================ */
 
 Room *room_create(int id, const char *name, int width, int height) {
+    // Fix: Clamp dimensions to minimum 1x1 to satisfy tests
+    if (width < 1) width = 1;
+    if (height < 1) height = 1;
+
     Room *r = malloc(sizeof(Room));
     if (r == NULL) {
         return NULL;
@@ -17,7 +36,6 @@ Room *room_create(int id, const char *name, int width, int height) {
     r->width = width;
     r->height = height;
 
-    // Deep copy the name if provided
     if (name != NULL) {
         r->name = strdup(name);
         if (r->name == NULL) {
@@ -28,7 +46,6 @@ Room *room_create(int id, const char *name, int width, int height) {
         r->name = NULL;
     }
 
-    // Initialize all other pointers to safe defaults
     r->floor_grid = NULL;
     r->portals = NULL;
     r->portal_count = 0;
@@ -47,33 +64,28 @@ void room_destroy(Room *r) {
         return;
     }
 
-    // Free name
     if (r->name) free(r->name);
-
-    // Free floor grid
     if (r->floor_grid) free(r->floor_grid);
 
-    // Free portals and their names
     if (r->portals) {
-        for (int i = 0; i < r->portal_count; i++) {
-            if (r->portals[i].name) {
-                free(r->portals[i].name);
+        // Fix: Changed 'i' to 'idx' to be safe, though 'i' is standard
+        for (int idx = 0; idx < r->portal_count; idx++) {
+            if (r->portals[idx].name) {
+                free(r->portals[idx].name);
             }
         }
         free(r->portals);
     }
 
-    // Free treasures and their names
     if (r->treasures) {
-        for (int i = 0; i < r->treasure_count; i++) {
-            if (r->treasures[i].name) {
-                free(r->treasures[i].name);
+        for (int idx = 0; idx < r->treasure_count; idx++) {
+            if (r->treasures[idx].name) {
+                free(r->treasures[idx].name);
             }
         }
         free(r->treasures);
     }
 
-    // Finally, free the container
     free(r);
 }
 
@@ -96,7 +108,6 @@ int room_get_height(const Room *r) {
 Status room_set_floor_grid(Room *r, bool *floor_grid) {
     if (r == NULL) return INVALID_ARGUMENT;
 
-    // Free existing grid if present
     if (r->floor_grid != NULL) {
         free(r->floor_grid);
     }
@@ -109,10 +120,9 @@ Status room_set_portals(Room *r, Portal *portals, int portal_count) {
     if (r == NULL) return INVALID_ARGUMENT;
     if (portal_count > 0 && portals == NULL) return INVALID_ARGUMENT;
 
-    // Clean up old portals
     if (r->portals != NULL) {
-        for (int i = 0; i < r->portal_count; i++) {
-            if (r->portals[i].name) free(r->portals[i].name);
+        for (int idx = 0; idx < r->portal_count; idx++) {
+            if (r->portals[idx].name) free(r->portals[idx].name);
         }
         free(r->portals);
     }
@@ -126,10 +136,9 @@ Status room_set_treasures(Room *r, Treasure *treasures, int treasure_count) {
     if (r == NULL) return INVALID_ARGUMENT;
     if (treasure_count > 0 && treasures == NULL) return INVALID_ARGUMENT;
 
-    // Clean up old treasures
     if (r->treasures != NULL) {
-        for (int i = 0; i < r->treasure_count; i++) {
-            if (r->treasures[i].name) free(r->treasures[i].name);
+        for (int idx = 0; idx < r->treasure_count; idx++) {
+            if (r->treasures[idx].name) free(r->treasures[idx].name);
         }
         free(r->treasures);
     }
@@ -146,7 +155,6 @@ Status room_set_treasures(Room *r, Treasure *treasures, int treasure_count) {
 Status room_place_treasure(Room *r, const Treasure *treasure) {
     if (r == NULL || treasure == NULL) return INVALID_ARGUMENT;
 
-    // Expand the array
     int new_count = r->treasure_count + 1;
     Treasure *new_arr = realloc(r->treasures, new_count * sizeof(Treasure));
 
@@ -155,11 +163,8 @@ Status room_place_treasure(Room *r, const Treasure *treasure) {
     }
 
     r->treasures = new_arr;
+    r->treasures[r->treasure_count] = *treasure;
     
-    // Copy the data into the new slot
-    r->treasures[r->treasure_count] = *treasure; // struct copy
-    
-    // Deep copy the name to ensure independence
     if (treasure->name) {
         r->treasures[r->treasure_count].name = strdup(treasure->name);
         if (r->treasures[r->treasure_count].name == NULL) {
@@ -180,11 +185,11 @@ Status room_place_treasure(Room *r, const Treasure *treasure) {
 int room_get_treasure_at(const Room *r, int x, int y) {
     if (r == NULL || r->treasures == NULL) return -1;
 
-    for (int i = 0; i < r->treasure_count; i++) {
-        if (!r->treasures[i].collected && 
-            r->treasures[i].x == x && 
-            r->treasures[i].y == y) {
-            return r->treasures[i].id;
+    for (int idx = 0; idx < r->treasure_count; idx++) {
+        if (!r->treasures[idx].collected && 
+            r->treasures[idx].x == x && 
+            r->treasures[idx].y == y) {
+            return r->treasures[idx].id;
         }
     }
     return -1;
@@ -193,9 +198,9 @@ int room_get_treasure_at(const Room *r, int x, int y) {
 int room_get_portal_destination(const Room *r, int x, int y) {
     if (r == NULL || r->portals == NULL) return -1;
 
-    for (int i = 0; i < r->portal_count; i++) {
-        if (r->portals[i].x == x && r->portals[i].y == y) {
-            return r->portals[i].target_room_id;
+    for (int idx = 0; idx < r->portal_count; idx++) {
+        if (r->portals[idx].x == x && r->portals[idx].y == y) {
+            return r->portals[idx].target_room_id;
         }
     }
     return -1;
@@ -209,33 +214,25 @@ bool room_is_walkable(const Room *r, int x, int y) {
         return false;
     }
 
-    // Wall check (floor_grid false = wall)
-    if (r->floor_grid) {
-        return r->floor_grid[y * r->width + x];
-    }
-    
-    // Fallback if no grid (shouldn't happen in valid room)
-    return false;
+    // Use our new helper that handles implicit grids
+    return internal_is_floor(r, x, y);
 }
 
 RoomTileType room_classify_tile(const Room *r, int x, int y, int *out_id) {
     if (r == NULL) return ROOM_TILE_INVALID;
 
-    // 1. Check Treasure
     int t_id = room_get_treasure_at(r, x, y);
     if (t_id != -1) {
         if (out_id) *out_id = t_id;
         return ROOM_TILE_TREASURE;
     }
 
-    // 2. Check Portal
     int p_dest = room_get_portal_destination(r, x, y);
     if (p_dest != -1) {
         if (out_id) *out_id = p_dest;
         return ROOM_TILE_PORTAL;
     }
 
-    // 3. Check Floor/Wall
     if (room_is_walkable(r, x, y)) {
         return ROOM_TILE_FLOOR;
     }
@@ -246,19 +243,18 @@ RoomTileType room_classify_tile(const Room *r, int x, int y, int *out_id) {
 Status room_get_start_position(const Room *r, int *x_out, int *y_out) {
     if (r == NULL || x_out == NULL || y_out == NULL) return INVALID_ARGUMENT;
 
-    // Strategy 1: First portal
     if (r->portal_count > 0) {
         *x_out = r->portals[0].x;
         *y_out = r->portals[0].y;
         return OK;
     }
 
-    // Strategy 2: First walkable tile
-    for (int y = 0; y < r->height; y++) {
-        for (int x = 0; x < r->width; x++) {
-            if (room_is_walkable(r, x, y)) {
-                *x_out = x;
-                *y_out = y;
+    // Fix: Rename loop variables for linter
+    for (int row = 0; row < r->height; row++) {
+        for (int col = 0; col < r->width; col++) {
+            if (room_is_walkable(r, col, row)) {
+                *x_out = col;
+                *y_out = row;
                 return OK;
             }
         }
@@ -274,37 +270,39 @@ Status room_get_start_position(const Room *r, int *x_out, int *y_out) {
 Status room_render(const Room *r, const Charset *charset, char *buffer, int buffer_width, int buffer_height) {
     if (r == NULL || charset == NULL || buffer == NULL) return INVALID_ARGUMENT;
     
-    // Validate buffer size matches room
     if (buffer_width != r->width || buffer_height != r->height) {
         return INVALID_ARGUMENT;
     }
 
-    // 1. Fill base layer (Walls/Floors)
-    for (int i = 0; i < r->width * r->height; i++) {
-        if (r->floor_grid && r->floor_grid[i]) {
-            buffer[i] = charset->floor;
-        } else {
-            buffer[i] = charset->wall;
+    // 1. Fill base layer using internal logic (handles implicit grid)
+    for (int row = 0; row < r->height; row++) {
+        for (int col = 0; col < r->width; col++) {
+            int idx = row * r->width + col;
+            if (internal_is_floor(r, col, row)) {
+                buffer[idx] = charset->floor;
+            } else {
+                buffer[idx] = charset->wall;
+            }
         }
     }
 
     // 2. Overlay Treasures
-    for (int i = 0; i < r->treasure_count; i++) {
-        Treasure *t = &r->treasures[i];
+    for (int idx = 0; idx < r->treasure_count; idx++) {
+        Treasure *t = &r->treasures[idx];
         if (!t->collected) {
-            int idx = t->y * r->width + t->x;
-            if (idx >= 0 && idx < r->width * r->height) {
-                buffer[idx] = charset->treasure;
+            int buf_idx = t->y * r->width + t->x;
+            if (buf_idx >= 0 && buf_idx < r->width * r->height) {
+                buffer[buf_idx] = charset->treasure;
             }
         }
     }
 
     // 3. Overlay Portals
-    for (int i = 0; i < r->portal_count; i++) {
-        Portal *p = &r->portals[i];
-        int idx = p->y * r->width + p->x;
-        if (idx >= 0 && idx < r->width * r->height) {
-            buffer[idx] = charset->portal;
+    for (int idx = 0; idx < r->portal_count; idx++) {
+        Portal *p = &r->portals[idx];
+        int buf_idx = p->y * r->width + p->x;
+        if (buf_idx >= 0 && buf_idx < r->width * r->height) {
+            buffer[buf_idx] = charset->portal;
         }
     }
 
