@@ -1,13 +1,15 @@
 #include <check.h>
 #include <stdlib.h>
 
-Suite *name_of_suite_here(void);
+//Suite *name_of_suite_here(void);
+Suite *room_suite(void);
 //more suites
 
 int main(void)
 {
     Suite *suites[] = {
-        name_of_suite_here(),
+        //name_of_suite_here(),
+        room_suite(),
         //more suites
         NULL
     };
