@@ -1,16 +1,18 @@
 #include <check.h>
 #include <stdlib.h>
 
-//Suite *name_of_suite_here(void);
+Suite *player_suite(void);
 Suite *room_suite(void);
-//more suites
+Suite *world_loader_suite(void);
+Suite *game_engine_suite(void);
 
 int main(void)
 {
     Suite *suites[] = {
-        //name_of_suite_here(),
+        player_suite(),
         room_suite(),
-        //more suites
+        world_loader_suite(),
+        game_engine_suite(),
         NULL
     };
 
